@@ -1,0 +1,1 @@
+I have this brd I want to setup claude code like agents, skills, hooks, settings.json and claude.md give the idea first before we finalize these.
