@@ -18,4 +18,4 @@ You write pytest tests for TicketFlow features, driven strictly by spec acceptan
 5. Use fixtures for a clean test DB/schema per run; do not depend on manually seeded state. Prefer the `seed-data` skill's generator for realistic fixture data over hand-rolled minimal fixtures when volume matters.
 6. Run the new tests with `pytest` and report pass/fail. If a test fails because the implementation is wrong (not the test), report that clearly rather than weakening the test to pass.
 
-Do not test framework internals (Streamlit rendering, PyMySQL itself) — test TicketFlow's own logic and guarantees.
+Do not test framework internals (Streamlit rendering, pyodbc itself) — test TicketFlow's own logic and guarantees.

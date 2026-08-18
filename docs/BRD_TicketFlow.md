@@ -111,16 +111,16 @@ pending on me?" in a chat that remembers the conversation.
   -----------------------------------------------------------------------
   ID                                  Assumption / Constraint
   ----------------------------------- -----------------------------------
-  AC-01                               MySQL is installed locally and
+  AC-01                               SQL Server is installed locally and
                                       reachable; the application connects
-                                      via PyMySQL using a connection
-                                      string.
+                                      via pyodbc using Windows/AD
+                                      integrated auth (Trusted_Connection).
 
-  AC-02                               A single MySQL user (`root`) is
-                                      used for all database access in
-                                      this demo. Production would use a
-                                      least-privilege, read-only user for
-                                      the AI layer.
+  AC-02                               A single Windows-authenticated
+                                      connection is used for all database
+                                      access in this demo. Production would
+                                      use a least-privilege, read-only
+                                      account for the AI layer.
 
   AC-03                               Ticket status values are
                                       constrained to a fixed set;
@@ -429,7 +429,7 @@ pending on me?" in a chat that remembers the conversation.
   NFR-05                  Performance             Common operations
                                                   respond within
                                                   approximately 2 seconds
-                                                  on local MySQL; chat
+                                                  on local SQL Server; chat
                                                   responses return
                                                   promptly.
 
@@ -575,8 +575,9 @@ This is used only if chat history is persisted beyond the session.
   Frontend                            Streamlit, custom-styled to the
                                       brand design system
 
-  Database                            MySQL (local) via PyMySQL; single
-                                      root user for this demo
+  Database                            SQL Server (local) via pyodbc;
+                                      Windows/AD integrated auth for this
+                                      demo
 
   Authentication                      bcrypt + Streamlit session state
 

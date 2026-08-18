@@ -6,7 +6,7 @@ LLM + LangGraph). No real OpenAI call is ever made: `ask()`'s `llm`
 parameter is a duck-typed injection point (anything with `.invoke(messages)`
 -> object with `.content`), so every test here uses `FakeLLM` below. The DB
 side reuses the `FakeConnection`/`FakeCursor`/`make_conn` doubles from
-tests/conftest.py -- no real MySQL server required.
+tests/conftest.py -- no real SQL Server instance required.
 
 AC -> test mapping:
   AC-1 (FR-AI-02/03) -> test_fr_ai_02_*  (multi-turn, 5 questions, history growth)
@@ -64,7 +64,7 @@ from features.chat.service import (
 # LLM_SQL's WHERE wrapped in parens and AND-ed with the real scope
 # condition -- see _inject_scope) are now two different strings.
 LLM_SQL = "SELECT * FROM tickets"
-SCOPED_SQL = "SELECT * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+SCOPED_SQL = "SELECT * FROM tickets WHERE (requester_id = ? OR assignee_id = ?) "
 
 
 class FakeResponse:
@@ -110,8 +110,8 @@ def test_fr_ai_07_validate_sql_rejects_multi_statement():
 @pytest.mark.parametrize(
     "sql",
     [
-        "UPDATE tickets SET status='CLOSED' WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s)",
-        "DELETE FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s)",
+        "UPDATE tickets SET status='CLOSED' WHERE (requester_id = ? OR assignee_id = ?)",
+        "DELETE FROM tickets WHERE (requester_id = ? OR assignee_id = ?)",
         "DROP" + " TABLE tickets",
         "INSERT INTO tickets (id) VALUES (1)",
     ],
@@ -273,7 +273,7 @@ def _scope(sql):
 
 def test_inject_scope_adds_where_clause_when_none_exists():
     assert _scope("SELECT * FROM tickets") == (
-        "SELECT * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+        "SELECT * FROM tickets WHERE (requester_id = ? OR assignee_id = ?) "
     )
 
 
@@ -281,7 +281,7 @@ def test_inject_scope_ands_with_existing_where_clause():
     scoped = _scope("SELECT * FROM tickets WHERE status = 'OPEN'")
     assert scoped == (
         "SELECT * FROM tickets WHERE (status = 'OPEN') "
-        "AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+        "AND (requester_id = ? OR assignee_id = ?) "
     )
 
 
@@ -293,17 +293,17 @@ def test_inject_scope_neutralizes_the_confirmed_dead_or_branch_bypass():
     # is wrapped in parentheses and AND-ed with the real, code-authored
     # scope condition, so it can only ever narrow the result set, never
     # widen it, regardless of what's inside those parens.
-    llm_sql = "SELECT * FROM tickets WHERE 1=1 OR (requester_id = %(user_id)s OR assignee_id = %(user_id)s)"
+    llm_sql = "SELECT * FROM tickets WHERE 1=1 OR (requester_id = ? OR assignee_id = ?)"
     scoped = _scope(llm_sql)
     assert scoped == (
         "SELECT * FROM tickets WHERE "
-        "(1=1 OR (requester_id = %(user_id)s OR assignee_id = %(user_id)s)) "
-        "AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+        "(1=1 OR (requester_id = ? OR assignee_id = ?)) "
+        "AND (requester_id = ? OR assignee_id = ?) "
     )
     # The real scope condition is the outermost AND-ed conjunct -- not just
     # present somewhere in the text -- so it always restricts the result.
     assert scoped.rstrip().endswith(
-        "AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s)"
+        "AND (requester_id = ? OR assignee_id = ?)"
     )
 
 
@@ -311,12 +311,12 @@ def test_inject_scope_inserts_before_group_by_order_by_limit_when_no_where():
     scoped = _scope("SELECT status, COUNT(*) FROM tickets GROUP BY status")
     assert scoped == (
         "SELECT status, COUNT(*) FROM tickets WHERE "
-        "(requester_id = %(user_id)s OR assignee_id = %(user_id)s) GROUP BY status"
+        "(requester_id = ? OR assignee_id = ?) GROUP BY status"
     )
 
 
 def test_inject_scope_inserts_before_having_without_group_by():
-    # HAVING is valid MySQL even with no GROUP BY (the whole result set is
+    # HAVING is valid T-SQL even with no GROUP BY (the whole result set is
     # treated as a single group); it must still act as a clause boundary so
     # the injected WHERE lands before it, not after (which would be a SQL
     # syntax error and simply crash the query rather than leak data -- but
@@ -324,7 +324,7 @@ def test_inject_scope_inserts_before_having_without_group_by():
     scoped = _scope("SELECT COUNT(*) FROM tickets HAVING COUNT(*) > 1")
     assert scoped == (
         "SELECT COUNT(*) FROM tickets WHERE "
-        "(requester_id = %(user_id)s OR assignee_id = %(user_id)s) HAVING COUNT(*) > 1"
+        "(requester_id = ? OR assignee_id = ?) HAVING COUNT(*) > 1"
     )
 
 
@@ -340,7 +340,7 @@ def test_inject_scope_boundary_keyword_matched_by_token_type_not_raw_text():
     )
     assert scoped == (
         "SELECT 'GROUP BY' AS label, status, COUNT(*) FROM tickets WHERE "
-        "(requester_id = %(user_id)s OR assignee_id = %(user_id)s) GROUP BY status"
+        "(requester_id = ? OR assignee_id = ?) GROUP BY status"
     )
 
 
@@ -357,7 +357,7 @@ def test_inject_scope_detects_group_by_boundary_with_internal_extra_whitespace()
     scoped = _scope("SELECT status, COUNT(*) FROM tickets GROUP  BY status")
     assert scoped == (
         "SELECT status, COUNT(*) FROM tickets WHERE "
-        "(requester_id = %(user_id)s OR assignee_id = %(user_id)s) GROUP  BY status"
+        "(requester_id = ? OR assignee_id = ?) GROUP  BY status"
     )
 
 
@@ -371,7 +371,7 @@ def test_inject_scope_preserves_order_by_limit_with_existing_where():
     scoped = _scope(sql)
     assert scoped == (
         "SELECT * FROM tickets WHERE "
-        "(status = 'OPEN') AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+        "(status = 'OPEN') AND (requester_id = ? OR assignee_id = ?) "
         "ORDER BY created_at LIMIT 5"
     )
 
@@ -381,27 +381,27 @@ def test_inject_scope_preserves_order_by_limit_with_existing_where():
     [
         # UNION-based exfiltration attempt.
         (
-            "SELECT * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+            "SELECT * FROM tickets WHERE (requester_id = ? OR assignee_id = ?) "
             "UNION SELECT * FROM tickets"
         ),
         # Forbidden keyword hidden inside a comment.
         (
-            "SELECT * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+            "SELECT * FROM tickets WHERE (requester_id = ? OR assignee_id = ?) "
             "/* please " + "DELETE".lower() + " this later */"
         ),
         # Forbidden keyword via mixed case.
         (
-            "SeLeCt * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s); "
+            "SeLeCt * FROM tickets WHERE (requester_id = ? OR assignee_id = ?); "
             "-- " + "DROP".lower() + " later"
         ),
         # sleep()-based timing/DoS attempt.
         (
-            "SELECT * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+            "SELECT * FROM tickets WHERE (requester_id = ? OR assignee_id = ?) "
             "AND SLEEP(5)"
         ),
         # information_schema probing.
         (
-            "SELECT * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+            "SELECT * FROM tickets WHERE (requester_id = ? OR assignee_id = ?) "
             "AND 1=(SELECT 1 FROM information_schema.tables)"
         ),
     ],
@@ -416,7 +416,7 @@ def test_fr_ai_07_validate_sql_does_not_false_positive_on_updated_created_column
     # word-boundary regex must not treat them as the forbidden keywords.
     sql = (
         "SELECT ticket_number, updated_at, created_at FROM tickets "
-        "WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+        "WHERE (requester_id = ? OR assignee_id = ?) "
         "ORDER BY updated_at DESC"
     )
     assert validate_sql(sql) == sql
@@ -449,9 +449,9 @@ def test_fr_ai_07_prompt_injection_plain_no_scope_request_is_safely_answered(mak
     assert result["failed"] is False
     executed_sql, executed_params = conn.cursor_obj.executed[0]
     assert executed_sql == (
-        "SELECT * FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) "
+        "SELECT * FROM tickets WHERE (requester_id = ? OR assignee_id = ?) "
     )
-    assert executed_params == {"user_id": 7}
+    assert executed_params == (7, 7)
 
 
 def test_fr_ai_07_prompt_injection_dead_or_branch_is_neutralized_not_bypassed(
@@ -466,7 +466,7 @@ def test_fr_ai_07_prompt_injection_dead_or_branch_is_neutralized_not_bypassed(
     # the result to the current user, never widen it.
     dead_or_sql = (
         "SELECT * FROM tickets WHERE 1=1 OR "
-        "(requester_id = %(user_id)s OR assignee_id = %(user_id)s)"
+        "(requester_id = ? OR assignee_id = ?)"
     )
     fake_llm = FakeLLM([dead_or_sql, "Here are your tickets."])
     conn = make_conn(fetchall_results=[[{"id": 1}]])
@@ -482,9 +482,9 @@ def test_fr_ai_07_prompt_injection_dead_or_branch_is_neutralized_not_bypassed(
     assert result["failed"] is False
     executed_sql, executed_params = conn.cursor_obj.executed[0]
     assert executed_sql.rstrip().endswith(
-        "AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s)"
+        "AND (requester_id = ? OR assignee_id = ?)"
     )
-    assert executed_params == {"user_id": 7}
+    assert executed_params == (7, 7)
 
 
 def test_fr_ai_07_prompt_injection_comma_join_to_users_never_executes(make_conn):
@@ -518,7 +518,7 @@ def test_fr_ai_07_prompt_injection_wrong_table_never_executes(make_conn):
     # LLM tries to pivot to another table entirely on both attempts.
     fake_llm = FakeLLM(
         [
-            "SELECT * FROM users WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s)",
+            "SELECT * FROM users WHERE (requester_id = ? OR assignee_id = ?)",
             "SELECT * FROM users",
         ]
     )
@@ -562,7 +562,7 @@ def test_fr_ai_07_injection_recovers_if_second_attempt_is_valid(make_conn):
     assert len(conn.cursor_obj.executed) == 1
     executed_sql, executed_params = conn.cursor_obj.executed[0]
     assert executed_sql == SCOPED_SQL
-    assert executed_params == {"user_id": 7}
+    assert executed_params == (7, 7)
 
 
 # ---------------------------------------------------------------------------
@@ -701,31 +701,31 @@ def test_fr_ai_02_multi_turn_five_questions_each_answered_and_history_grows(make
     turns = [
         (
             "How many tickets do I have?",
-            "SELECT COUNT(*) AS c FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s)",
+            "SELECT COUNT(*) AS c FROM tickets WHERE (requester_id = ? OR assignee_id = ?)",
             [{"c": 5}],
             "You have 5 tickets.",
         ),
         (
             "How many are urgent?",
-            "SELECT COUNT(*) AS c FROM tickets WHERE priority='URGENT' AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s)",
+            "SELECT COUNT(*) AS c FROM tickets WHERE priority='URGENT' AND (requester_id = ? OR assignee_id = ?)",
             [{"c": 2}],
             "2 of those are urgent.",
         ),
         (
             "What's my most common category?",
-            "SELECT category, COUNT(*) AS c FROM tickets WHERE (requester_id = %(user_id)s OR assignee_id = %(user_id)s) GROUP BY category ORDER BY c DESC",
+            "SELECT category, COUNT(*) AS c FROM tickets WHERE (requester_id = ? OR assignee_id = ?) GROUP BY category ORDER BY c DESC",
             [{"category": "Bug", "c": 4}],
             "Your most common category is Bug.",
         ),
         (
             "Any updated recently?",
-            "SELECT COUNT(*) AS c FROM tickets WHERE updated_at > '2026-08-16' AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s)",
+            "SELECT COUNT(*) AS c FROM tickets WHERE updated_at > '2026-08-16' AND (requester_id = ? OR assignee_id = ?)",
             [{"c": 1}],
             "Yes, 1 ticket was updated recently.",
         ),
         (
             "How many are still open?",
-            "SELECT COUNT(*) AS c FROM tickets WHERE status='OPEN' AND (requester_id = %(user_id)s OR assignee_id = %(user_id)s)",
+            "SELECT COUNT(*) AS c FROM tickets WHERE status='OPEN' AND (requester_id = ? OR assignee_id = ?)",
             [{"c": 3}],
             "3 tickets are still open.",
         ),

@@ -1,10 +1,10 @@
 """Tests for features/tickets/service.py against specs/tickets.md acceptance
 criteria (AC-1..AC-6).
 
-All tests use the fake, in-memory PyMySQL-shaped connection/cursor from
+All tests use the fake, in-memory pyodbc-shaped connection/cursor from
 tests/conftest.py (FakeCursor/FakeConnection via the `make_conn` fixture) --
-no real MySQL server is required or assumed, mirroring the auth suite's
-approach (see test_auth_service.py).
+no real SQL Server instance is required or assumed, mirroring the auth
+suite's approach (see test_auth_service.py).
 
 Notes on two acceptance criteria that can't be fully proven at this unit
 level:
@@ -19,15 +19,15 @@ level:
   applicable, the same way test_session.py flags FR-AUTH-06 for pages that
   don't exist yet.
 - AC-6 ("ticket numbers are never reused or duplicated across concurrent
-  creations"): this is a DB-level guarantee -- AUTO_INCREMENT `id` plus a
-  UNIQUE constraint on `ticket_number` (see common/db.py), with the number
-  deterministically derived from the id. A single-threaded fake cursor
-  cannot exercise real concurrent inserts or a real UNIQUE constraint, so
-  this suite only proves the unit-level pieces of that guarantee (the
-  format is deterministic and different ids produce different numbers by
-  construction). Proving the concurrency guarantee itself is a gap here --
-  it needs an integration test against a real MySQL instance and is not
-  covered by this suite.
+  creations"): this is a DB-level guarantee -- IDENTITY `id` plus a
+  filtered UNIQUE index on `ticket_number` (see common/db.py), with the
+  number deterministically derived from the id. A single-threaded fake
+  cursor cannot exercise real concurrent inserts or a real UNIQUE
+  constraint, so this suite only proves the unit-level pieces of that
+  guarantee (the format is deterministic and different ids produce
+  different numbers by construction). Proving the concurrency guarantee
+  itself is a gap here -- it needs an integration test against a real SQL
+  Server instance and is not covered by this suite.
 """
 
 import pytest
@@ -318,7 +318,7 @@ def test_fr_tkt_05_get_ticket_query_scopes_to_requester_or_assignee(make_conn):
     get_ticket(conn, 55, 3)
 
     sql, params = conn.cursor_obj.executed[0]
-    assert "requester_id = %s OR assignee_id = %s" in sql
+    assert "requester_id = ? OR assignee_id = ?" in sql
     assert params == (55, 3, 3)
 
 

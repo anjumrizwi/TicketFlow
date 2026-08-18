@@ -1,9 +1,9 @@
 """Tests for features/tickets/service.py's `list_tickets` against
 specs/list-search.md acceptance criteria (AC-1..AC-6).
 
-All tests use the fake, in-memory PyMySQL-shaped connection/cursor from
+All tests use the fake, in-memory pyodbc-shaped connection/cursor from
 tests/conftest.py (FakeCursor/FakeConnection via the `make_conn` fixture) --
-no real MySQL server is required or assumed, mirroring the
+no real SQL Server instance is required or assumed, mirroring the
 test_status_workflow_service.py suite's approach.
 
 Every test asserts on the actual SQL string and bound params sent to the
@@ -35,7 +35,7 @@ def test_fr_list_01_no_filters_returns_full_user_scoped_list_newest_first(make_c
     list_tickets(conn, user_id=7)
 
     sql, params = _executed_select(conn)
-    assert "WHERE (requester_id = %s OR assignee_id = %s)" in sql
+    assert "WHERE (requester_id = ? OR assignee_id = ?)" in sql
     assert "ORDER BY created_at DESC, id DESC" in sql
     assert list(params) == [7, 7]
     # No other AND-ed clauses should be present -- the WHERE clause is
@@ -62,11 +62,11 @@ def test_fr_list_01_returned_rows_passed_through_unfiltered(make_conn):
 @pytest.mark.parametrize(
     "kwarg,value,expected_clause,expected_extra_params",
     [
-        ("status", "OPEN", "status = %s", ["OPEN"]),
-        ("priority", "HIGH", "priority = %s", ["HIGH"]),
-        ("category", "Bug", "category = %s", ["Bug"]),
-        ("date_from", "2026-01-01", "DATE(created_at) >= %s", ["2026-01-01"]),
-        ("date_to", "2026-12-31", "DATE(created_at) <= %s", ["2026-12-31"]),
+        ("status", "OPEN", "status = ?", ["OPEN"]),
+        ("priority", "HIGH", "priority = ?", ["HIGH"]),
+        ("category", "Bug", "category = ?", ["Bug"]),
+        ("date_from", "2026-01-01", "CAST(created_at AS DATE) >= ?", ["2026-01-01"]),
+        ("date_to", "2026-12-31", "CAST(created_at AS DATE) <= ?", ["2026-12-31"]),
     ],
 )
 def test_fr_list_02_single_filter_adds_exactly_one_anded_clause(
@@ -79,7 +79,7 @@ def test_fr_list_02_single_filter_adds_exactly_one_anded_clause(
     sql, params = _executed_select(conn)
     where_clause = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
 
-    assert "(requester_id = %s OR assignee_id = %s)" in where_clause
+    assert "(requester_id = ? OR assignee_id = ?)" in where_clause
     assert expected_clause in where_clause
     # Exactly two clauses, joined by exactly one " AND ".
     assert where_clause.count(" AND ") == 1
@@ -114,14 +114,14 @@ def test_fr_list_03_multiple_filters_and_together_not_or(make_conn):
     # filter clause introduces an OR (which would turn intersection into
     # union).
     assert where_clause.count(" OR ") == 1
-    assert "(requester_id = %s OR assignee_id = %s)" in where_clause
+    assert "(requester_id = ? OR assignee_id = ?)" in where_clause
 
     for clause in (
-        "status = %s",
-        "priority = %s",
-        "category = %s",
-        "DATE(created_at) >= %s",
-        "DATE(created_at) <= %s",
+        "status = ?",
+        "priority = ?",
+        "category = ?",
+        "CAST(created_at AS DATE) >= ?",
+        "CAST(created_at AS DATE) <= ?",
     ):
         assert clause in where_clause
 
@@ -165,7 +165,7 @@ def test_fr_list_04_search_alone_adds_like_clause_with_wrapped_pattern(make_conn
     sql, params = _executed_select(conn)
     where_clause = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
 
-    assert "(title LIKE %s OR description LIKE %s)" in where_clause
+    assert "(title LIKE ? OR description LIKE ?)" in where_clause
     assert where_clause.count(" AND ") == 1  # scope AND search
     # The search clause's internal OR plus the scoping clause's internal OR.
     assert where_clause.count(" OR ") == 2
@@ -181,9 +181,9 @@ def test_fr_list_04_search_composes_with_an_active_status_filter(make_conn):
     sql, params = _executed_select(conn)
     where_clause = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
 
-    assert "(requester_id = %s OR assignee_id = %s)" in where_clause
-    assert "status = %s" in where_clause
-    assert "(title LIKE %s OR description LIKE %s)" in where_clause
+    assert "(requester_id = ? OR assignee_id = ?)" in where_clause
+    assert "status = ?" in where_clause
+    assert "(title LIKE ? OR description LIKE ?)" in where_clause
     assert where_clause.count(" AND ") == 2  # scope AND status AND search
     assert list(params) == [7, 7, "OPEN", "%printer%", "%printer%"]
 
@@ -269,7 +269,7 @@ def test_fr_list_06_scoping_clause_always_first_and_bound_to_user_id(make_conn, 
     where_clause = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0].strip()
 
     # The scoping clause is unconditionally the very first clause.
-    assert where_clause.startswith("(requester_id = %s OR assignee_id = %s)")
+    assert where_clause.startswith("(requester_id = ? OR assignee_id = ?)")
     # Its two bound values are always user_id, first two positional params,
     # never overridden or shifted by any filter argument.
     assert list(params)[:2] == [7, 7]

@@ -4,7 +4,7 @@ FR-AUTH-01..03, FR-AUTH-02 (bcrypt only), NFR-01 (no plaintext password
 ever logged/persisted). Callers own the connection's lifecycle.
 """
 import bcrypt
-import pymysql
+import pyodbc
 
 REGISTER_CONFLICT_MESSAGE = "That username or email is already registered."
 LOGIN_FAILURE_MESSAGE = "Invalid username or password."
@@ -44,7 +44,7 @@ def register_user(conn, username, email, password):
 
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id FROM users WHERE username = %s OR email = %s",
+            "SELECT id FROM users WHERE username = ? OR email = ?",
             (username, email),
         )
         if cur.fetchone():
@@ -53,20 +53,21 @@ def register_user(conn, username, email, password):
         try:
             cur.execute(
                 "INSERT INTO users (username, email, password_hash, role) "
-                "VALUES (%s, %s, %s, 'REQUESTER')",
+                "OUTPUT INSERTED.id "
+                "VALUES (?, ?, ?, 'REQUESTER')",
                 (username, email, password_hash),
             )
-        except pymysql.err.IntegrityError:
+        except pyodbc.IntegrityError:
             # A concurrent registration won the race between the check above
             # and this insert; the unique constraint is the source of truth.
             conn.rollback()
             raise AuthError(REGISTER_CONFLICT_MESSAGE) from None
 
-        user_id = cur.lastrowid
+        user_id = cur.fetchone()["id"]
         conn.commit()
 
         cur.execute(
-            "SELECT id, username, email, role, created_at FROM users WHERE id = %s",
+            "SELECT id, username, email, role, created_at FROM users WHERE id = ?",
             (user_id,),
         )
         return cur.fetchone()
@@ -83,7 +84,7 @@ def authenticate_user(conn, identifier, password):
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, username, email, password_hash, role, created_at "
-            "FROM users WHERE username = %s OR email = %s",
+            "FROM users WHERE username = ? OR email = ?",
             (identifier, identifier),
         )
         row = cur.fetchone()

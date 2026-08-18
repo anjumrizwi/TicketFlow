@@ -88,14 +88,14 @@ def _clear_seeded_data(conn):
     adjacent: never touch non-seeded/real user data)."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id FROM users WHERE username LIKE %s",
+            "SELECT id FROM users WHERE username LIKE ?",
             (f"{DEMO_USERNAME_PREFIX}%",),
         )
         demo_user_ids = [row["id"] for row in cur.fetchall()]
         if not demo_user_ids:
             return
 
-        user_placeholders = ",".join(["%s"] * len(demo_user_ids))
+        user_placeholders = ",".join(["?"] * len(demo_user_ids))
         cur.execute(
             f"SELECT id FROM tickets WHERE requester_id IN ({user_placeholders})",
             demo_user_ids,
@@ -103,7 +103,7 @@ def _clear_seeded_data(conn):
         demo_ticket_ids = [row["id"] for row in cur.fetchall()]
 
         if demo_ticket_ids:
-            ticket_placeholders = ",".join(["%s"] * len(demo_ticket_ids))
+            ticket_placeholders = ",".join(["?"] * len(demo_ticket_ids))
             cur.execute(
                 f"DELETE FROM ticket_activity WHERE ticket_id IN ({ticket_placeholders})",
                 demo_ticket_ids,
@@ -129,10 +129,11 @@ def _create_demo_user(conn, index):
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO users (username, email, password_hash, role) "
-            "VALUES (%s, %s, %s, %s)",
+            "OUTPUT INSERTED.id "
+            "VALUES (?, ?, ?, ?)",
             (username, email, password_hash, role),
         )
-        user_id = cur.lastrowid
+        user_id = cur.fetchone()["id"]
     conn.commit()
     return user_id
 

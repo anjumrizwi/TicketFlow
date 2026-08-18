@@ -2,10 +2,10 @@
 and activity-history logic against specs/status-workflow.md acceptance
 criteria (AC-1..AC-6).
 
-All tests use the fake, in-memory PyMySQL-shaped connection/cursor from
+All tests use the fake, in-memory pyodbc-shaped connection/cursor from
 tests/conftest.py (FakeCursor/FakeConnection via the `make_conn` fixture) --
-no real MySQL server is required or assumed, mirroring the tickets/auth
-suites' approach.
+no real SQL Server instance is required or assumed, mirroring the
+tickets/auth suites' approach.
 
 Placed in a separate file from test_tickets_service.py (which covers
 specs/tickets.md) to keep this spec's acceptance-criteria coverage

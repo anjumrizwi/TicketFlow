@@ -2,8 +2,8 @@
 criteria (AC-1..AC-4; AC-5..AC-7 are covered in test_session.py / noted as
 not-yet-applicable, see that file's module docstring).
 
-All tests use a fake, in-memory PyMySQL-shaped connection (see
-tests/conftest.py) — no real MySQL server is required or assumed.
+All tests use a fake, in-memory pyodbc-shaped connection (see
+tests/conftest.py) — no real SQL Server instance is required or assumed.
 """
 
 import bcrypt

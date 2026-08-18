@@ -1,5 +1,5 @@
 streamlit>=1.32
-pymysql>=1.1
+pyodbc>=5.1
 bcrypt>=4.1
 python-dotenv>=1.0
 pytest>=8.0

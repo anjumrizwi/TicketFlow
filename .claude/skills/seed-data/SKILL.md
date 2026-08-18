@@ -20,10 +20,9 @@ The script (`scripts/seed_data.py`, backed by `features/seed_data/service.py`)
 implements every step below — don't re-derive this logic by hand with raw
 SQL; invoke the script via Bash instead:
 
-1. Connects to MySQL using the same env-based connection config the app
-   uses (`DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, etc., loaded via
-   `.env` if present) — never hardcode credentials, and never print the
-   connection string.
+1. Connects to SQL Server using the same env-based connection config the
+   app uses (`DB_HOST`, `DB_NAME`, etc., loaded via `.env` if present) —
+   never hardcode credentials, and never print the connection string.
 2. Before inserting, deletes any rows under the reserved `demo_` username
    prefix (and their tickets/activity) so re-running is idempotent:
    existing seeded rows are cleared and regenerated rather than

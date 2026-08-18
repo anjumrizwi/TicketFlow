@@ -77,23 +77,24 @@ def create_ticket(conn, requester_id, title, description, category, priority):
             cur.execute(
                 "INSERT INTO tickets "
                 "(requester_id, title, description, category, priority, status) "
-                "VALUES (%s, %s, %s, %s, %s, 'OPEN')",
+                "OUTPUT INSERTED.id "
+                "VALUES (?, ?, ?, ?, ?, 'OPEN')",
                 (requester_id, title, description, category, priority),
             )
-            ticket_id = cur.lastrowid
+            ticket_id = cur.fetchone()["id"]
             ticket_number = f"TCK-{ticket_id:06d}"
 
             cur.execute(
-                "UPDATE tickets SET ticket_number = %s WHERE id = %s",
+                "UPDATE tickets SET ticket_number = ? WHERE id = ?",
                 (ticket_number, ticket_id),
             )
             cur.execute(
                 "INSERT INTO ticket_activity "
                 "(ticket_id, actor_id, action, field_changed, old_value, new_value) "
-                "VALUES (%s, %s, 'CREATED', NULL, NULL, %s)",
+                "VALUES (?, ?, 'CREATED', NULL, NULL, ?)",
                 (ticket_id, requester_id, "OPEN"),
             )
-            cur.execute(f"SELECT {TICKET_COLUMNS} FROM tickets WHERE id = %s", (ticket_id,))
+            cur.execute(f"SELECT {TICKET_COLUMNS} FROM tickets WHERE id = ?", (ticket_id,))
             ticket = cur.fetchone()
         except Exception:
             conn.rollback()
@@ -109,7 +110,7 @@ def transition_status(conn, ticket_id, actor_id, new_status):
     in the same transaction as the status change (FR-STAT-05)."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT status, requester_id, assignee_id FROM tickets WHERE id = %s",
+            "SELECT status, requester_id, assignee_id FROM tickets WHERE id = ?",
             (ticket_id,),
         )
         row = cur.fetchone()
@@ -124,13 +125,13 @@ def transition_status(conn, ticket_id, actor_id, new_status):
 
         try:
             cur.execute(
-                "UPDATE tickets SET status = %s WHERE id = %s",
+                "UPDATE tickets SET status = ? WHERE id = ?",
                 (new_status, ticket_id),
             )
             cur.execute(
                 "INSERT INTO ticket_activity "
                 "(ticket_id, actor_id, action, field_changed, old_value, new_value) "
-                "VALUES (%s, %s, 'STATUS_CHANGE', 'status', %s, %s)",
+                "VALUES (?, ?, 'STATUS_CHANGE', 'status', ?, ?)",
                 (ticket_id, actor_id, current_status, new_status),
             )
         except Exception:
@@ -153,7 +154,7 @@ def update_ticket_field(conn, ticket_id, actor_id, field, new_value):
 
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT {field}, requester_id, assignee_id FROM tickets WHERE id = %s",
+            f"SELECT {field}, requester_id, assignee_id FROM tickets WHERE id = ?",
             (ticket_id,),
         )
         row = cur.fetchone()
@@ -168,13 +169,13 @@ def update_ticket_field(conn, ticket_id, actor_id, field, new_value):
 
         try:
             cur.execute(
-                f"UPDATE tickets SET {field} = %s WHERE id = %s",
+                f"UPDATE tickets SET {field} = ? WHERE id = ?",
                 (new_value, ticket_id),
             )
             cur.execute(
                 "INSERT INTO ticket_activity "
                 "(ticket_id, actor_id, action, field_changed, old_value, new_value) "
-                "VALUES (%s, %s, 'FIELD_UPDATE', %s, %s, %s)",
+                "VALUES (?, ?, 'FIELD_UPDATE', ?, ?, ?)",
                 (ticket_id, actor_id, field, old_value, new_value),
             )
         except Exception:
@@ -189,7 +190,7 @@ def get_ticket(conn, ticket_id, user_id):
     with conn.cursor() as cur:
         cur.execute(
             f"SELECT {TICKET_COLUMNS} FROM tickets "
-            "WHERE id = %s AND (requester_id = %s OR assignee_id = %s)",
+            "WHERE id = ? AND (requester_id = ? OR assignee_id = ?)",
             (ticket_id, user_id, user_id),
         )
         return cur.fetchone()
@@ -201,7 +202,7 @@ def get_ticket_by_number(conn, ticket_number, user_id):
     with conn.cursor() as cur:
         cur.execute(
             f"SELECT {TICKET_COLUMNS} FROM tickets "
-            "WHERE ticket_number = %s AND (requester_id = %s OR assignee_id = %s)",
+            "WHERE ticket_number = ? AND (requester_id = ? OR assignee_id = ?)",
             (ticket_number, user_id, user_id),
         )
         return cur.fetchone()
@@ -223,26 +224,26 @@ def list_tickets(
     them (FR-LIST-01..05, BR-05). Omit a filter (leave it None) to not
     narrow by it; call with no filters to get the full user-scoped list.
     """
-    clauses = ["(requester_id = %s OR assignee_id = %s)"]
+    clauses = ["(requester_id = ? OR assignee_id = ?)"]
     params = [user_id, user_id]
 
     if status is not None:
-        clauses.append("status = %s")
+        clauses.append("status = ?")
         params.append(status)
     if priority is not None:
-        clauses.append("priority = %s")
+        clauses.append("priority = ?")
         params.append(priority)
     if category is not None:
-        clauses.append("category = %s")
+        clauses.append("category = ?")
         params.append(category)
     if date_from is not None:
-        clauses.append("DATE(created_at) >= %s")
+        clauses.append("CAST(created_at AS DATE) >= ?")
         params.append(date_from)
     if date_to is not None:
-        clauses.append("DATE(created_at) <= %s")
+        clauses.append("CAST(created_at AS DATE) <= ?")
         params.append(date_to)
     if search:
-        clauses.append("(title LIKE %s OR description LIKE %s)")
+        clauses.append("(title LIKE ? OR description LIKE ?)")
         like = f"%{search}%"
         params.extend([like, like])
 
@@ -262,7 +263,7 @@ def get_ticket_activity(conn, ticket_id, user_id):
     exist or isn't the user's."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id FROM tickets WHERE id = %s AND (requester_id = %s OR assignee_id = %s)",
+            "SELECT id FROM tickets WHERE id = ? AND (requester_id = ? OR assignee_id = ?)",
             (ticket_id, user_id, user_id),
         )
         if cur.fetchone() is None:
@@ -272,7 +273,7 @@ def get_ticket_activity(conn, ticket_id, user_id):
             "SELECT ta.id, ta.actor_id, u.username AS actor_username, ta.action, "
             "ta.field_changed, ta.old_value, ta.new_value, ta.created_at "
             "FROM ticket_activity ta JOIN users u ON u.id = ta.actor_id "
-            "WHERE ta.ticket_id = %s ORDER BY ta.created_at DESC, ta.id DESC",
+            "WHERE ta.ticket_id = ? ORDER BY ta.created_at DESC, ta.id DESC",
             (ticket_id,),
         )
         return cur.fetchall()

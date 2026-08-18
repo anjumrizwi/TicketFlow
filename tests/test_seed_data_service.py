@@ -1,10 +1,10 @@
 """Tests for features/seed_data/service.py against specs/seed-data.md
 acceptance criteria (AC-1..AC-5).
 
-All tests use the fake, in-memory PyMySQL-shaped connection/cursor from
+All tests use the fake, in-memory pyodbc-shaped connection/cursor from
 tests/conftest.py (FakeCursor/FakeConnection via the `make_conn` fixture) --
-no real MySQL server is required or assumed, mirroring the auth/tickets
-suites' approach.
+no real SQL Server instance is required or assumed, mirroring the
+auth/tickets suites' approach.
 
 Two levels of fake-out are used, deliberately:
 

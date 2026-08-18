@@ -13,7 +13,7 @@ JOIN-free SELECT referencing exactly the `tickets` table (no other table,
 no second copy of `tickets`); only then does `_inject_scope` — plain
 code, not an LLM — parse the query's own WHERE clause (if any) and
 structurally AND it with
-`(requester_id = %(user_id)s OR assignee_id = %(user_id)s)`, wrapping
+`(requester_id = ? OR assignee_id = ?)`, wrapping
 whatever the LLM wrote in parentheses first. Because the scoping condition
 is always the outermost AND-ed conjunct by construction — never merely
 present somewhere in the text — no LLM-authored `OR 1=1` or similar can
@@ -52,7 +52,7 @@ MAX_ATTEMPTS = 2
 # than patched further.
 REQUIRED_TABLES = {"tickets"}
 
-SCOPE_CONDITION = "requester_id = %(user_id)s OR assignee_id = %(user_id)s"
+SCOPE_CONDITION = "requester_id = ? OR assignee_id = ?"
 
 _CLAUSE_BOUNDARY_KEYWORDS = ("GROUP BY", "ORDER BY", "LIMIT", "HAVING")
 
@@ -90,16 +90,15 @@ _FORBIDDEN_WORDS = (
 )
 # Multi-word / punctuation-sensitive patterns that need their own regex.
 # Comment markers are banned outright, not just scanned for hidden keywords
-# inside them: `--`/`#` can truncate everything after them (MySQL executes
-# only up to the comment, while `_inject_scope`'s appended clause — added
-# by naive string concatenation, not re-parsing — would land inside the
-# now-dead comment). `/*` additionally covers MySQL's "versioned comment"
-# syntax (`/*!12345 ... */`), which MySQL executes as live SQL but which
-# both this module's raw-text keyword scan and `sqlparse`'s tokenizer treat
-# as an inert, invisible comment — a documented class of keyword-filter
-# bypass. There is no legitimate reason for this assistant's generated SQL
-# to contain a comment at all, so any occurrence is rejected rather than
-# risking a mismatch between what gets validated and what MySQL executes.
+# inside them: `--` can truncate everything after them (the database
+# executes only up to the comment, while `_inject_scope`'s appended clause
+# — added by naive string concatenation, not re-parsing — would land
+# inside the now-dead comment). `#` and `/*` are banned for the same
+# reason plus defense-in-depth against comment-based keyword-filter
+# bypasses documented across SQL dialects generally. There is no
+# legitimate reason for this assistant's generated SQL to contain a
+# comment at all, so any occurrence is rejected rather than risking a
+# mismatch between what gets validated and what the database executes.
 _FORBIDDEN_PATTERNS = (
     re.compile(r"\bsleep\s*\(", re.IGNORECASE),
     re.compile(r"\bbenchmark\s*\(", re.IGNORECASE),
@@ -114,7 +113,7 @@ SYSTEM_PROMPT = """You are a text-to-SQL assistant for TicketFlow, a ticket \
 management system. You answer questions about the current user's own \
 tickets by generating exactly one read-only SQL SELECT query.
 
-Schema (MySQL):
+Schema (SQL Server / T-SQL):
   tickets(id, ticket_number, requester_id, assignee_id, title, description,
           category, priority, status, created_at, updated_at)
 
@@ -354,7 +353,7 @@ def _build_graph(llm, conn):
 
     def execute_node(state):
         with conn.cursor() as cur:
-            cur.execute(state["sql"], {"user_id": state["user_id"]})
+            cur.execute(state["sql"], (state["user_id"], state["user_id"]))
             rows = cur.fetchall()
         return {"rows": rows}
 
@@ -443,7 +442,7 @@ def log_chat_error(conn, user_id, error_type, error_message):
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO chat_error_log (user_id, error_type, error_message) "
-                "VALUES (%s, %s, %s)",
+                "VALUES (?, ?, ?)",
                 (user_id, error_type, error_message),
             )
         conn.commit()

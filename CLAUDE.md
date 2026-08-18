@@ -1,6 +1,6 @@
 # TicketFlow
 
-A Streamlit + MySQL ticket management system built to teach spec-driven
+A Streamlit + SQL Server ticket management system built to teach spec-driven
 development with Claude Code. Full requirements: [docs/BRD_TicketFlow.md](docs/BRD_TicketFlow.md).
 This is a teaching artifact, not a production helpdesk — favor clarity and
 correct patterns over feature completeness. The out-of-scope list in the
@@ -9,7 +9,8 @@ BRD (§3.2) is binding; new ideas become future enhancements, not scope creep.
 ## Stack
 
 - Python 3.10+, Streamlit frontend (custom-styled, see Design System below)
-- MySQL via PyMySQL, single `root` connection (demo-only — see Security)
+- SQL Server via pyodbc, Windows/AD integrated auth (Trusted_Connection)
+  to a local/demo instance (see Security)
 - Auth: bcrypt + Streamlit session state
 - GenAI: OpenAI via LangChain (chat + text-to-SQL), LangGraph for the SQL
   safety loop
