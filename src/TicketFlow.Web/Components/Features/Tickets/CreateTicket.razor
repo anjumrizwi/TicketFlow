@@ -1,0 +1,96 @@
+@page "/tickets/new"
+@attribute [Authorize]
+
+<PageTitle>Create Ticket</PageTitle>
+
+<h1 class="brand-header">Create Ticket</h1>
+
+<div class="card-panel">
+    <EditForm Model="_model" OnValidSubmit="HandleCreateAsync">
+        <div class="mb-3">
+            <label>Title</label>
+            <InputText class="form-control" @bind-Value="_model.Title" />
+        </div>
+        <div class="mb-3">
+            <label>Description</label>
+            <InputTextArea class="form-control" @bind-Value="_model.Description" />
+        </div>
+        <div class="mb-3">
+            <label>Category</label>
+            <InputSelect class="form-control" @bind-Value="_model.Category">
+                @foreach (var category in TicketConstants.Categories)
+                {
+                    <option value="@category">@category</option>
+                }
+            </InputSelect>
+        </div>
+        <div class="mb-3">
+            <label>Priority</label>
+            <InputSelect class="form-control" @bind-Value="_model.Priority">
+                @foreach (var priority in TicketConstants.Priorities)
+                {
+                    <option value="@priority">@priority</option>
+                }
+            </InputSelect>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <p class="text-danger">@_errorMessage</p>
+        }
+        @if (!string.IsNullOrEmpty(_successMessage))
+        {
+            <p class="text-success">@_successMessage</p>
+        }
+
+        <button type="submit" class="btn btn-primary">Create Ticket</button>
+    </EditForm>
+</div>
+
+@code {
+    [Inject]
+    private IDbConnectionFactory ConnectionFactory { get; set; } = default!;
+
+    [Inject]
+    private TicketService TicketService { get; set; } = default!;
+
+    [Inject]
+    private CurrentUserAccessor CurrentUser { get; set; } = default!;
+
+    private readonly TicketFormModel _model = new()
+    {
+        Category = TicketConstants.Categories[0],
+        Priority = TicketConstants.Priorities[0],
+    };
+
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private sealed class TicketFormModel
+    {
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Category { get; set; } = "";
+        public string Priority { get; set; } = "";
+    }
+
+    private async Task HandleCreateAsync()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+
+        using var connection = ConnectionFactory.CreateConnection();
+        try
+        {
+            var ticket = await TicketService.CreateTicketAsync(
+                connection, CurrentUser.CurrentUser!.Id, _model.Title, _model.Description, _model.Category, _model.Priority);
+            _successMessage = $"Ticket {ticket.TicketNumber} created.";
+            _model.Title = "";
+            _model.Description = "";
+        }
+        catch (TicketError ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+}

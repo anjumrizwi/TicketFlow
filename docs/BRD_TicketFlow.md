@@ -600,6 +600,71 @@ This is used only if chat history is persisted beyond the session.
                                       environment-based configuration
   -----------------------------------------------------------------------
 
+# 11a. Technology Stack — C# Port (`TicketFlowCSharp` branch)
+
+A parallel implementation of this application exists on the
+`TicketFlowCSharp` branch, built in C#/.NET rather than Python. This
+section supersedes §11's table for that branch only; the Python
+implementation on `main` remains the reference implementation and is
+unaffected.
+
+  -----------------------------------------------------------------------
+  Layer / Area                        Technology
+  ----------------------------------- -----------------------------------
+  Language                            C# / .NET 10
+
+  Frontend                            Blazor Server, custom-styled to the
+                                      same brand design system (§12)
+
+  Database                            SQL Server (local) via Dapper +
+                                      Microsoft.Data.SqlClient; Windows/AD
+                                      integrated auth for this demo
+
+  Authentication                      BCrypt.Net-Next + Blazor Server
+                                      circuit-scoped session state
+
+  GenAI                               OpenAI model via a direct SDK call
+                                      (chat with memory + guarded
+                                      text-to-SQL); a bounded
+                                      generate/validate/regenerate/
+                                      execute/summarize loop for the
+                                      validation step
+
+  Reporting                           CSV + PDF export implemented as a
+                                      shared `ReportService`
+
+  Testing                             xUnit (unit + integration)
+  -----------------------------------------------------------------------
+
+FR-AI-05/06/07 name "LangChain," "LangGraph," and "a shared root DB
+connection" because they describe the Python reference implementation's
+actual mechanism. For any implementation (Python or C#), the **binding
+behavior** those requirements establish — and which every implementation
+must preserve — is:
+
+- data questions produce a parameterized SQL query scoped to the current
+  user (FR-AI-05's binding behavior, independent of which library
+  generates it);
+- every generated query passes through a generate → validate (single
+  read-only, single-table, JOIN-free, subquery-free `SELECT`) →
+  regenerate-if-unsafe (bounded attempts) → execute → summarize loop
+  before ever reaching the database (FR-AI-06's binding behavior,
+  independent of whether that loop is a LangGraph `StateGraph` or a plain
+  bounded loop);
+- any query that isn't a single user-scoped `SELECT` is rejected and
+  never executed, enforced in application code because the database
+  connection itself is a single shared, non-per-user principal
+  (FR-AI-07's binding behavior, independent of whether that principal is
+  a MySQL/SQL Server `root`-equivalent account or a Windows/AD service
+  account).
+
+A spec on the `TicketFlowCSharp` branch that names different concrete
+tools (e.g. `ChatOrchestrator`/`SqlValidator` instead of LangChain/
+LangGraph) does not contradict the BRD as long as it preserves the
+behavior above — this section exists so that isn't treated as an
+unresolved spec/BRD conflict per this document's own "the BRD wins,
+flag discrepancies" rule.
+
 # 12. UI / UX & Design System
 
 The application must look polished and presentable for demos and

@@ -1,0 +1,132 @@
+@page "/tickets"
+@attribute [Authorize]
+
+<PageTitle>Ticket List</PageTitle>
+
+<h1 class="brand-header">Ticket List</h1>
+
+<div class="filter-row">
+    <div class="mb-3">
+        <label>Status</label>
+        <select class="form-control" @bind="_status">
+            <option value="@AllOption">All</option>
+            @foreach (var status in TicketConstants.Statuses)
+            {
+                <option value="@status">@status</option>
+            }
+        </select>
+    </div>
+    <div class="mb-3">
+        <label>Priority</label>
+        <select class="form-control" @bind="_priority">
+            <option value="@AllOption">All</option>
+            @foreach (var priority in TicketConstants.Priorities)
+            {
+                <option value="@priority">@priority</option>
+            }
+        </select>
+    </div>
+    <div class="mb-3">
+        <label>Category</label>
+        <select class="form-control" @bind="_category">
+            <option value="@AllOption">All</option>
+            @foreach (var category in TicketConstants.Categories)
+            {
+                <option value="@category">@category</option>
+            }
+        </select>
+    </div>
+</div>
+
+<div class="filter-row">
+    <div class="mb-3">
+        <label>Created from</label>
+        <InputDate class="form-control" @bind-Value="_dateFrom" />
+    </div>
+    <div class="mb-3">
+        <label>Created to</label>
+        <InputDate class="form-control" @bind-Value="_dateTo" />
+    </div>
+</div>
+
+<div class="mb-3">
+    <label>Search title/description</label>
+    <input class="form-control" @bind="_search" @bind:event="oninput" />
+</div>
+
+<button class="btn btn-primary" @onclick="LoadAsync">Apply filters</button>
+
+@if (_tickets is not null)
+{
+    @if (_tickets.Count == 0)
+    {
+        <p><em>No tickets match the current filters.</em></p>
+    }
+    else
+    {
+        <table class="table ticket-table">
+            <thead>
+                <tr>
+                    <th>Ticket</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Category</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ticket in _tickets)
+                {
+                    <tr>
+                        <td><a href="@($"/tickets/detail/{ticket.TicketNumber}")">@ticket.TicketNumber</a></td>
+                        <td>@ticket.Title</td>
+                        <td>@ticket.Status</td>
+                        <td>@ticket.Priority</td>
+                        <td>@ticket.Category</td>
+                        <td>@ticket.CreatedAt</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private const string AllOption = "All";
+
+    [Inject]
+    private IDbConnectionFactory ConnectionFactory { get; set; } = default!;
+
+    [Inject]
+    private TicketService TicketService { get; set; } = default!;
+
+    [Inject]
+    private CurrentUserAccessor CurrentUser { get; set; } = default!;
+
+    private string _status = AllOption;
+    private string _priority = AllOption;
+    private string _category = AllOption;
+    private DateOnly? _dateFrom;
+    private DateOnly? _dateTo;
+    private string _search = "";
+    private IReadOnlyList<Ticket>? _tickets;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        using var connection = ConnectionFactory.CreateConnection();
+        var filter = new TicketListFilter
+        {
+            UserId = CurrentUser.CurrentUser!.Id,
+            Status = _status == AllOption ? null : _status,
+            Priority = _priority == AllOption ? null : _priority,
+            Category = _category == AllOption ? null : _category,
+            DateFrom = _dateFrom,
+            DateTo = _dateTo,
+            Search = string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+        };
+        _tickets = await TicketService.ListTicketsAsync(connection, filter);
+    }
+}

@@ -29,10 +29,13 @@ an authenticated session.
   self-registered user is created with role `Requester`. `Support agent`
   accounts are created only via the `seed-data` skill or a direct DB
   update; there is no in-app role picker or promotion flow.
-- Timed session expiry. The session is Streamlit's in-memory session
-  state: it lasts for the lifetime of that session (ends on logout or when
-  the session state is cleared, e.g. server restart) — there is no
-  separate idle/absolute timeout to implement.
+- Timed session expiry. The session is Blazor Server's circuit-scoped
+  authentication state (`CurrentUserAccessor`/`AppAuthenticationStateProvider`
+  on the `TicketFlowCSharp` branch), held server-side for the lifetime of
+  one SignalR circuit — it ends on logout, tab close, or circuit
+  disconnect/expiry per the framework's own reconnection-window defaults.
+  There is no separate idle/absolute timeout implemented beyond that
+  lifecycle.
 - Password strength rules (minimum length, complexity). Only "required,
   non-empty" is enforced; the BRD does not specify complexity rules.
 
@@ -54,7 +57,10 @@ an authenticated session.
    credentials, the failure message is identical whether the username
    exists or not.
 5. The session persists across page navigation without re-prompting for
-   login, for as long as the underlying Streamlit session state is alive.
+   login, for as long as the underlying session is alive (Streamlit's
+   in-memory session state on `main`; a Blazor Server circuit-scoped
+   `AuthenticationStateProvider` on `TicketFlowCSharp` — see "Changes
+   since last draft").
 6. Logging out clears the session; subsequent ticket/report/chat access
    redirects to login.
 7. Any attempt to reach ticket, reporting, or chat functionality without an
@@ -72,3 +78,13 @@ an authenticated session.
   Streamlit's in-memory session lifetime, not a separate timed expiry —
   the BRD and stack (bcrypt + Streamlit session state) don't call for a
   token/cookie-based timeout, so none is invented.
+- **`TicketFlowCSharp` branch:** reworded AC-5 and the session-expiry
+  out-of-scope bullet to describe Blazor Server's circuit-scoped
+  `AuthenticationStateProvider` instead of Streamlit's session state —
+  same underlying guarantee ("no re-prompt while the session/circuit is
+  alive, no separate timed expiry"), different mechanism name. This is a
+  BRD-ID-preserving rewording, not a new requirement — see BRD §11a. Also
+  worth recording as a genuine (minor) behavior difference, not silently
+  absorbed: a slow network reconnect can tear down a Blazor circuit
+  (forcing re-login) in a case where a Streamlit session might have
+  tolerated the same gap.

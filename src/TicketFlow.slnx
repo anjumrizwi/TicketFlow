@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TicketFlow.Core/TicketFlow.Core.csproj" />
+  <Project Path="TicketFlow.SeedCli/TicketFlow.SeedCli.csproj" />
+  <Project Path="TicketFlow.Tests/TicketFlow.Tests.csproj" />
+  <Project Path="TicketFlow.Web/TicketFlow.Web.csproj" />
+</Solution>

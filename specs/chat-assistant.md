@@ -8,10 +8,14 @@ status: Approved
 
 A messaging-app-style chat where the user asks free-text questions about
 their own tickets. The assistant answers via guarded text-to-SQL: an LLM
-generates SQL, a LangGraph loop validates it as a single read-only
-user-scoped `SELECT` before execution, and the result is summarized
-conversationally. This is the highest-risk feature in the app and the
-primary reason `security-auditor` exists.
+generates SQL, a bounded generate/validate/regenerate loop validates it
+as a single read-only user-scoped `SELECT` before execution, and the
+result is summarized conversationally. This is the highest-risk feature
+in the app and the primary reason `security-auditor` exists. On `main`
+this loop is a LangGraph `StateGraph`; on `TicketFlowCSharp` it's a plain
+bounded async loop (`ChatOrchestrator.AskAsync`) — see BRD §11a for why
+naming a different mechanism doesn't contradict the BRD's binding
+behavior.
 
 ## BRD requirements covered
 
@@ -22,13 +26,19 @@ primary reason `security-auditor` exists.
   trends, answered accurately.
 - FR-AI-04 — answers use only the logged-in user's data; never fabricates,
   never leaks another user's data.
-- FR-AI-05 — LLM (OpenAI via LangChain) produces parameterized,
-  user-scoped SQL.
-- FR-AI-06 — LangGraph loop: generate -> validate (single read-only
-  user-scoped SELECT) -> regenerate if unsafe -> run -> summarize.
+- FR-AI-05 — the LLM produces parameterized, user-scoped SQL text via an
+  injectable completion client (`main`: OpenAI via LangChain;
+  `TicketFlowCSharp`: `IChatCompletionClient`, direct OpenAI SDK).
+- FR-AI-06 — a bounded loop: generate -> validate (single read-only
+  user-scoped SELECT) -> regenerate if unsafe (max 2 attempts) -> run ->
+  summarize (`main`: LangGraph `StateGraph`; `TicketFlowCSharp`:
+  `ChatOrchestrator.AskAsync`, a plain loop — see `SqlValidator`/
+  `ScopeInjector` for the validate/scope-injection steps).
 - FR-AI-07 — any non-single-SELECT or non-user-scoped query is rejected
-  and never executed (code-level guard, since a shared root DB user is
-  used in this demo).
+  and never executed (code-level guard, since a shared, non-per-user DB
+  principal is used in this demo — `main`'s MySQL/SQL-Server `root`-style
+  account or `TicketFlowCSharp`'s Windows/AD integrated-auth connection,
+  either way not a distinct account per application user).
 - FR-AI-08 — memory persists for the session; "Clear chat" resets it.
 - BR-06 (chat is read-only, always user-scoped) — scope note: BR-06
   governs the AI-generated SQL path — the LLM never causes a write, and
@@ -63,21 +73,30 @@ primary reason `security-auditor` exists.
 - Optional `chat_messages` table if session-spanning history is added.
 - New `chat_error_log` table (owned by this feature, created in
   `common/db.init_schema` alongside the other tables):
-  - `id` INT AUTO_INCREMENT PRIMARY KEY
+  - `id` INT IDENTITY(1,1) PRIMARY KEY (SQL Server; `main`'s MySQL-era
+    draft of this table incorrectly showed `AUTO_INCREMENT` here — a
+    leftover inconsistent with every other table's real DDL in
+    `common/db.py` even before this branch existed, corrected here
+    regardless of which branch you're reading this on)
   - `user_id` INT NOT NULL, FK -> `users(id)` — the user whose turn failed;
     every read of this table is filtered to the requesting user's own id,
     same discipline as `tickets`/`ticket_activity` (NFR-03).
   - `error_type` VARCHAR(64) NOT NULL — e.g. the caught exception's class
-    name (`RateLimitError`, `APIConnectionError`) or `SQL_VALIDATION` for
-    a `ChatSQLError`/`fail_node` outcome. Never a raw exception `repr()`.
+    name (`RateLimitError`, `APIConnectionError`) or a fixed label for a
+    SQL-validation-exhausted outcome (`main`: `ChatSQLError`/`fail_node`;
+    `TicketFlowCSharp`: `nameof(ChatSqlException)`). Never a raw exception
+    `repr()`/`ToString()`.
   - `error_message` VARCHAR(500) NOT NULL — a scrubbed, human-readable
-    message. For `ChatSQLError` this is `str(exc)` (already a fixed,
-    non-sensitive string per `validate_sql`'s own messages). For any
-    other exception this is a fixed classification string, not
-    `str(exc)` — third-party SDK exceptions are not guaranteed not to
-    embed request headers, endpoints, or key fragments, so they are never
-    persisted verbatim (NFR-01).
-  - `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    message. For a SQL-validation failure this is the validator's own
+    message (already a fixed, non-sensitive string — `main`'s
+    `validate_sql`/`TicketFlowCSharp`'s `SqlValidator.Validate`). For any
+    other exception this is a fixed classification string, never the raw
+    exception's message — third-party SDK exceptions are not guaranteed
+    not to embed request headers, endpoints, or key fragments, so they
+    are never persisted verbatim (NFR-01;
+    `TicketFlowCSharp`: `ChatExceptionClassifier.Classify`).
+  - `created_at` DATETIME2 NOT NULL DEFAULT SYSDATETIME() (SQL Server;
+    same MySQL-era-draft correction as `id` above)
   - Nothing question-derived (the user's free-text question) or
     SQL-derived (generated query text, row data) is stored — only the
     failure classification. This keeps the log itself inside the "no PII,
@@ -157,3 +176,35 @@ logging the free-text question, generated SQL, or the raw exception
 boundary rather than opening a new PII/secret-leak surface — this is why
 AC-10 pins the log to fixed classification strings instead of `str(exc)`
 for third-party exceptions.
+
+## Changes since last draft (`TicketFlowCSharp` branch)
+
+Ported the entire feature with the same acceptance criteria and the same
+"tickets-only, no joins ever" scope reduction described above — that
+decision is not reopened. Two implementation choices worth recording:
+
+- **`SqlValidator`** uses `Microsoft.SqlServer.TransactSql.ScriptDom` (the
+  real T-SQL parser used by SSDT/DacFx) instead of `main`'s token-scanning
+  approach (`sqlparse` plus a keyword blocklist). This is a strictly
+  stronger guarantee, not a redesign: a comment can't hide a second
+  statement from a real parser the way it could from regex/keyword
+  banning (the exact class of bug that motivated `main`'s "narrow the
+  query surface" decision above), and non-SELECT statement types simply
+  fail to parse as a `SelectStatement` rather than needing an enumerated
+  list of banned keywords. The single-table/no-join/no-subquery checks
+  are structural AST checks (statement type, table-reference count,
+  nested-query-specification count), not text scanning.
+- **`ScopeInjector`** builds the AND-ed scope condition directly on the
+  parsed AST (`QuerySpecification.WhereClause`) and re-emits SQL via
+  `Sql160ScriptGenerator`, instead of `main`'s manual string-splicing
+  around a detected "clause boundary" keyword. This removes the class of
+  bug where the injected clause could land in the wrong text position
+  relative to `GROUP BY`/`ORDER BY`/`HAVING` — `WhereClause` is a
+  well-defined AST property, not a text offset guess.
+
+Verified by `ChatOrchestratorTests` (`TicketFlow.Tests`) against a real
+(in-memory SQLite) database connection, not just string assertions on
+the generated SQL: a tautology bypass attempt (`WHERE 1 = 1 OR 1 = 1`,
+modeling the exact `OR 1=1` bypass class `main`'s "Changes since last
+draft" above describes finding) is executed for real and asserted to
+never return another user's rows.

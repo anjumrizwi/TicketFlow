@@ -1,0 +1,226 @@
+/* Brand design system (BRD §12). Hex values here must stay in sync with
+   TicketFlow.Core.Common.Design.DesignTokens — a static CSS file can't
+   reference a C# constant directly, so TicketFlow.Tests asserts parity
+   between the two (DesignTokensCssParityTests). White background, black
+   text, no gradients: green = success/primary actions/user chat bubbles,
+   purple = brand/headers/sidebar/assistant chat, pink = accents/badges/
+   urgent-priority. */
+:root {
+    --tf-color-green: #00E676;
+    --tf-color-purple: #6C3FC5;
+    --tf-color-pink: #FF4FA3;
+    --tf-color-background: #FFFFFF;
+    --tf-color-text: #000000;
+}
+
+body {
+    background-color: var(--tf-color-background);
+    color: var(--tf-color-text);
+}
+
+.brand-header {
+    color: var(--tf-color-purple);
+    font-weight: 700;
+}
+
+.page .sidebar {
+    background-color: var(--tf-color-purple);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-brand {
+    color: #FFFFFF;
+    font-weight: 700;
+    font-size: 1.25rem;
+    padding: 1rem;
+}
+
+.sidebar .nav-link {
+    color: #FFFFFF;
+}
+
+.sidebar .nav-link.active,
+.sidebar .nav-link:hover {
+    color: var(--tf-color-pink);
+}
+
+.btn-logout {
+    background-color: transparent;
+    border: 1px solid #FFFFFF;
+    color: #FFFFFF;
+    border-radius: 8px;
+    margin: 1rem;
+    padding: 0.5rem 1rem;
+}
+
+.auth-page {
+    max-width: 480px;
+    margin: 3rem auto 0;
+}
+
+.auth-card {
+    border-radius: 12px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+    padding: 1.5rem;
+    background-color: var(--tf-color-background);
+}
+
+.auth-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #E0E0E0;
+}
+
+.auth-tabs button {
+    background: none;
+    border: none;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    color: var(--tf-color-text);
+    border-bottom: 2px solid transparent;
+}
+
+.auth-tabs button.active {
+    color: var(--tf-color-pink);
+    border-bottom-color: var(--tf-color-pink);
+}
+
+.card-panel {
+    border-radius: 12px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    background-color: var(--tf-color-background);
+}
+
+.filter-row {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.filter-row .mb-3 {
+    flex: 1;
+}
+
+.ticket-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ticket-table th,
+.ticket-table td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #E0E0E0;
+}
+
+.stat-tiles {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.stat-tile {
+    flex: 1;
+    min-width: 140px;
+    border-radius: 12px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+    padding: 1.25rem;
+    background-color: var(--tf-color-background);
+    text-align: center;
+}
+
+.stat-tile .stat-value {
+    font-size: 2.25rem;
+    font-weight: 700;
+    color: var(--tf-color-purple);
+}
+
+.stat-tile .stat-label {
+    color: var(--tf-color-text);
+    font-size: 0.9rem;
+}
+
+.quick-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+
+.btn-logout-outline {
+    background-color: transparent;
+    border: 1px solid var(--tf-color-purple);
+    color: var(--tf-color-purple);
+    border-radius: 8px;
+    padding: 0.4rem 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    min-height: 200px;
+}
+
+.chat-bubble-row {
+    display: flex;
+}
+
+.chat-bubble-row.row-user {
+    justify-content: flex-end;
+}
+
+.chat-bubble-row.row-assistant {
+    justify-content: flex-start;
+}
+
+.chat-bubble {
+    max-width: 70%;
+    border-radius: 14px;
+    padding: 0.6rem 1rem;
+    color: #000000;
+    white-space: pre-wrap;
+}
+
+.chat-bubble.bubble-user {
+    background-color: var(--tf-color-green);
+}
+
+.chat-bubble.bubble-assistant {
+    background-color: #FFFFFF;
+    border: 2px solid var(--tf-color-purple);
+}
+
+.chat-error-details {
+    margin-bottom: 1rem;
+}
+
+.chat-input-row {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.chat-input-row .form-control {
+    flex: 1;
+}
+
+.btn-primary,
+.btn.btn-primary {
+    background-color: var(--tf-color-green);
+    border-color: var(--tf-color-green);
+    color: #000000;
+    border-radius: 8px;
+}
+
+.btn-primary:hover,
+.btn.btn-primary:hover {
+    background-color: var(--tf-color-green);
+    border-color: var(--tf-color-green);
+    opacity: 0.85;
+    color: #000000;
+}

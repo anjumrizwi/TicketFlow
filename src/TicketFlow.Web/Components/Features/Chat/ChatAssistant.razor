@@ -1,0 +1,119 @@
+@page "/chat"
+@attribute [Authorize]
+
+<PageTitle>Chat Assistant</PageTitle>
+
+<h1 class="brand-header">Chat Assistant</h1>
+
+<button type="button" class="btn btn-logout-outline" @onclick="ClearChat">Clear chat</button>
+
+<div class="chat-container">
+    @foreach (var message in _history)
+    {
+        <div class="chat-bubble-row @(message.Role == "user" ? "row-user" : "row-assistant")">
+            <div class="chat-bubble @(message.Role == "user" ? "bubble-user" : "bubble-assistant")">
+                @message.Content
+            </div>
+        </div>
+    }
+
+    @if (_isTyping)
+    {
+        <div class="chat-bubble-row row-assistant">
+            <div class="chat-bubble bubble-assistant"><em>Assistant is typing...</em></div>
+        </div>
+    }
+</div>
+
+@if (_lastErrorType is not null)
+{
+    <details class="chat-error-details">
+        <summary>Error details</summary>
+        <p>Type: @_lastErrorType</p>
+        <p>Message: @_lastErrorMessage</p>
+    </details>
+}
+
+<EditForm Model="_inputModel" OnValidSubmit="HandleSendAsync">
+    <div class="chat-input-row">
+        <InputText class="form-control" @bind-Value="_inputModel.Question" placeholder="Ask about your tickets..." disabled="@_isTyping" />
+        <button type="submit" class="btn btn-primary" disabled="@_isTyping">Send</button>
+    </div>
+</EditForm>
+
+@code {
+    [Inject]
+    private ChatOrchestrator Orchestrator { get; set; } = default!;
+
+    [Inject]
+    private IDbConnectionFactory ConnectionFactory { get; set; } = default!;
+
+    [Inject]
+    private IChatErrorLogRepository ErrorLog { get; set; } = default!;
+
+    [Inject]
+    private CurrentUserAccessor CurrentUser { get; set; } = default!;
+
+    // Session/circuit-only, matching FR-AI-08/BR-06: chat turns themselves
+    // are never persisted to the database, only failures are (via
+    // ErrorLog.LogAsync below).
+    private readonly List<ChatMessage> _history = new();
+    private readonly InputModel _inputModel = new();
+    private bool _isTyping;
+    private string? _lastErrorType;
+    private string? _lastErrorMessage;
+
+    private sealed class InputModel
+    {
+        public string Question { get; set; } = "";
+    }
+
+    private void ClearChat()
+    {
+        _history.Clear();
+        _lastErrorType = null;
+        _lastErrorMessage = null;
+    }
+
+    private async Task HandleSendAsync()
+    {
+        var question = _inputModel.Question.Trim();
+        if (string.IsNullOrEmpty(question))
+        {
+            return;
+        }
+
+        _inputModel.Question = "";
+        _lastErrorType = null;
+        _lastErrorMessage = null;
+        _history.Add(new ChatMessage("user", question));
+        _isTyping = true;
+        StateHasChanged();
+
+        using var connection = ConnectionFactory.CreateConnection();
+        try
+        {
+            var result = await Orchestrator.AskAsync(question, CurrentUser.CurrentUser!.Id, _history.ToList(), connection);
+            _history.Add(new ChatMessage("assistant", result.Answer ?? ""));
+
+            if (result.Failed)
+            {
+                _lastErrorType = nameof(ChatSqlException);
+                _lastErrorMessage = result.ValidationError ?? "The assistant couldn't safely answer that question.";
+                await ErrorLog.LogAsync(connection, CurrentUser.CurrentUser!.Id, _lastErrorType, _lastErrorMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            var (errorType, errorMessage) = ChatExceptionClassifier.Classify(ex);
+            _lastErrorType = errorType;
+            _lastErrorMessage = errorMessage;
+            _history.Add(new ChatMessage("assistant", "I couldn't safely answer that question."));
+            await ErrorLog.LogAsync(connection, CurrentUser.CurrentUser!.Id, errorType, errorMessage);
+        }
+        finally
+        {
+            _isTyping = false;
+        }
+    }
+}

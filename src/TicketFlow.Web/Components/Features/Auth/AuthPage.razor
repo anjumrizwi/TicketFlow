@@ -1,0 +1,119 @@
+@page "/login"
+
+<PageTitle>TicketFlow</PageTitle>
+
+<div class="auth-page">
+    <h1 class="brand-header">TicketFlow</h1>
+
+    <div class="auth-tabs">
+        <button type="button" class="@(_activeTab == "login" ? "active" : "")" @onclick='() => _activeTab = "login"'>Log in</button>
+        <button type="button" class="@(_activeTab == "register" ? "active" : "")" @onclick='() => _activeTab = "register"'>Register</button>
+    </div>
+
+    <div class="auth-card">
+        @if (_activeTab == "login")
+        {
+            <EditForm Model="_loginModel" OnValidSubmit="HandleLoginAsync">
+                <div class="mb-3">
+                    <label>Username or email</label>
+                    <InputText class="form-control" @bind-Value="_loginModel.Identifier" />
+                </div>
+                <div class="mb-3">
+                    <label>Password</label>
+                    <InputText type="password" class="form-control" @bind-Value="_loginModel.Password" />
+                </div>
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <p class="text-danger">@_errorMessage</p>
+                }
+                <button type="submit" class="btn btn-primary">Log in</button>
+            </EditForm>
+        }
+        else
+        {
+            <EditForm Model="_registerModel" OnValidSubmit="HandleRegisterAsync">
+                <div class="mb-3">
+                    <label>Username</label>
+                    <InputText class="form-control" @bind-Value="_registerModel.Username" />
+                </div>
+                <div class="mb-3">
+                    <label>Email</label>
+                    <InputText class="form-control" @bind-Value="_registerModel.Email" />
+                </div>
+                <div class="mb-3">
+                    <label>Password</label>
+                    <InputText type="password" class="form-control" @bind-Value="_registerModel.Password" />
+                </div>
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <p class="text-danger">@_errorMessage</p>
+                }
+                <button type="submit" class="btn btn-primary">Register</button>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@code {
+    [Inject]
+    private IDbConnectionFactory ConnectionFactory { get; set; } = default!;
+
+    [Inject]
+    private AuthService AuthService { get; set; } = default!;
+
+    [Inject]
+    private CurrentUserAccessor CurrentUser { get; set; } = default!;
+
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
+
+    private string _activeTab = "login";
+    private readonly LoginModel _loginModel = new();
+    private readonly RegisterModel _registerModel = new();
+    private string? _errorMessage;
+
+    private sealed class LoginModel
+    {
+        public string Identifier { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    private sealed class RegisterModel
+    {
+        public string Username { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        _errorMessage = null;
+        using var connection = ConnectionFactory.CreateConnection();
+        try
+        {
+            var user = await AuthService.AuthenticateUserAsync(connection, _loginModel.Identifier, _loginModel.Password);
+            CurrentUser.Login(user);
+            Navigation.NavigateTo("/");
+        }
+        catch (AuthError ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleRegisterAsync()
+    {
+        _errorMessage = null;
+        using var connection = ConnectionFactory.CreateConnection();
+        try
+        {
+            var user = await AuthService.RegisterUserAsync(connection, _registerModel.Username, _registerModel.Email, _registerModel.Password);
+            CurrentUser.Login(user);
+            Navigation.NavigateTo("/");
+        }
+        catch (AuthError ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+}

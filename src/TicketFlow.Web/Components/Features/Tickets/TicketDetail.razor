@@ -1,0 +1,235 @@
+@page "/tickets/detail/{TicketNumber?}"
+@attribute [Authorize]
+
+<PageTitle>Ticket Detail</PageTitle>
+
+<h1 class="brand-header">Ticket Detail</h1>
+
+<div class="card-panel">
+    <EditForm Model="_lookupModel" OnValidSubmit="HandleLookupAsync">
+        <div class="mb-3">
+            <label>Ticket number</label>
+            <InputText class="form-control" @bind-Value="_lookupModel.TicketNumber" />
+        </div>
+        <button type="submit" class="btn btn-primary">View</button>
+    </EditForm>
+</div>
+
+@if (_notFoundNumber is not null)
+{
+    <p class="text-danger">No ticket @_notFoundNumber found for your account.</p>
+}
+
+@if (_ticket is not null)
+{
+    <div class="card-panel">
+        <h2>@_ticket.TicketNumber — @_ticket.Title</h2>
+        <p>@_ticket.Description</p>
+        <p>Status: <strong>@_ticket.Status</strong></p>
+
+        @if (_nextStatuses.Count > 0)
+        {
+            <EditForm Model="_transitionModel" OnValidSubmit="HandleTransitionAsync">
+                <div class="mb-3">
+                    <label>Move to</label>
+                    <InputSelect class="form-control" @bind-Value="_transitionModel.NewStatus">
+                        @foreach (var status in _nextStatuses)
+                        {
+                            <option value="@status">@status</option>
+                        }
+                    </InputSelect>
+                </div>
+                <button type="submit" class="btn btn-primary">Update Status</button>
+            </EditForm>
+        }
+        else
+        {
+            <p><em>No further status transitions are available.</em></p>
+        }
+
+        @if (!string.IsNullOrEmpty(_transitionError))
+        {
+            <p class="text-danger">@_transitionError</p>
+        }
+
+        <EditForm Model="_fieldModel" OnValidSubmit="HandleFieldSaveAsync">
+            <div class="mb-3">
+                <label>Category</label>
+                <InputSelect class="form-control" @bind-Value="_fieldModel.Category">
+                    @foreach (var category in TicketConstants.Categories)
+                    {
+                        <option value="@category">@category</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="mb-3">
+                <label>Priority</label>
+                <InputSelect class="form-control" @bind-Value="_fieldModel.Priority">
+                    @foreach (var priority in TicketConstants.Priorities)
+                    {
+                        <option value="@priority">@priority</option>
+                    }
+                </InputSelect>
+            </div>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+        </EditForm>
+
+        @if (!string.IsNullOrEmpty(_fieldMessage))
+        {
+            <p>@_fieldMessage</p>
+        }
+
+        <h3>Activity History</h3>
+        @if (_activity.Count == 0)
+        {
+            <p><em>No activity yet.</em></p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var row in _activity)
+                {
+                    <li>
+                        @row.CreatedAt — <strong>@row.ActorUsername</strong> @row.Action
+                        @if (row.FieldChanged is not null)
+                        {
+                            <text> (@row.FieldChanged: @row.OldValue → @row.NewValue)</text>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? TicketNumber { get; set; }
+
+    [Inject]
+    private IDbConnectionFactory ConnectionFactory { get; set; } = default!;
+
+    [Inject]
+    private TicketService TicketService { get; set; } = default!;
+
+    [Inject]
+    private CurrentUserAccessor CurrentUser { get; set; } = default!;
+
+    private readonly LookupModel _lookupModel = new();
+    private readonly TransitionModel _transitionModel = new();
+    private readonly FieldModel _fieldModel = new();
+
+    private Ticket? _ticket;
+    private string? _notFoundNumber;
+    private string? _transitionError;
+    private string? _fieldMessage;
+    private List<string> _nextStatuses = new();
+    private IReadOnlyList<TicketActivity> _activity = Array.Empty<TicketActivity>();
+
+    private sealed class LookupModel
+    {
+        public string TicketNumber { get; set; } = "";
+    }
+
+    private sealed class TransitionModel
+    {
+        public string NewStatus { get; set; } = "";
+    }
+
+    private sealed class FieldModel
+    {
+        public string Category { get; set; } = "";
+        public string Priority { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(TicketNumber))
+        {
+            _lookupModel.TicketNumber = TicketNumber;
+            await LoadTicketAsync(TicketNumber);
+        }
+    }
+
+    private async Task HandleLookupAsync()
+    {
+        await LoadTicketAsync(_lookupModel.TicketNumber.Trim());
+    }
+
+    private async Task LoadTicketAsync(string ticketNumber)
+    {
+        _notFoundNumber = null;
+        _transitionError = null;
+        _fieldMessage = null;
+
+        using var connection = ConnectionFactory.CreateConnection();
+        var ticket = await TicketService.GetTicketByNumberAsync(connection, ticketNumber, CurrentUser.CurrentUser!.Id);
+        if (ticket is null)
+        {
+            _ticket = null;
+            _notFoundNumber = ticketNumber;
+            return;
+        }
+
+        _ticket = ticket;
+        _fieldModel.Category = ticket.Category;
+        _fieldModel.Priority = ticket.Priority;
+        _nextStatuses = TicketConstants.AllowedTransitions.TryGetValue(ticket.Status, out var next)
+            ? next.OrderBy(s => s, StringComparer.Ordinal).ToList()
+            : new List<string>();
+        _transitionModel.NewStatus = _nextStatuses.FirstOrDefault() ?? "";
+
+        _activity = await TicketService.GetTicketActivityAsync(connection, ticket.Id, CurrentUser.CurrentUser!.Id);
+    }
+
+    private async Task HandleTransitionAsync()
+    {
+        _transitionError = null;
+        using var connection = ConnectionFactory.CreateConnection();
+        try
+        {
+            await TicketService.TransitionStatusAsync(connection, _ticket!.Id, CurrentUser.CurrentUser!.Id, _transitionModel.NewStatus);
+            await LoadTicketAsync(_ticket!.TicketNumber!);
+        }
+        catch (Exception ex) when (ex is TransitionError or TicketPermissionError)
+        {
+            _transitionError = ex.Message;
+        }
+    }
+
+    private async Task HandleFieldSaveAsync()
+    {
+        _fieldMessage = null;
+        using var connection = ConnectionFactory.CreateConnection();
+        var changed = false;
+        try
+        {
+            if (_fieldModel.Category != _ticket!.Category)
+            {
+                await TicketService.UpdateTicketFieldAsync(connection, _ticket.Id, CurrentUser.CurrentUser!.Id, "category", _fieldModel.Category);
+                changed = true;
+            }
+
+            if (_fieldModel.Priority != _ticket!.Priority)
+            {
+                await TicketService.UpdateTicketFieldAsync(connection, _ticket.Id, CurrentUser.CurrentUser!.Id, "priority", _fieldModel.Priority);
+                changed = true;
+            }
+        }
+        catch (Exception ex) when (ex is TicketError or TicketPermissionError)
+        {
+            _fieldMessage = ex.Message;
+            return;
+        }
+
+        if (changed)
+        {
+            _fieldMessage = "Ticket updated.";
+            await LoadTicketAsync(_ticket!.TicketNumber!);
+        }
+        else
+        {
+            _fieldMessage = "No changes to save.";
+        }
+    }
+}

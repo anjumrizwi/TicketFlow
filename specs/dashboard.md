@@ -42,5 +42,23 @@ navigation, scoped entirely to the logged-in user.
 4. Each quick action link navigates to the correct page (Create Ticket,
    Ticket List, Reports, Chat Assistant).
 5. Creating a ticket or changing a status, then returning to the
-   dashboard, shows updated counts/recent list without a stale cache.
+   dashboard, shows updated counts/recent list without a stale cache
+   (Streamlit's rerun-per-interaction model on `main`; on `TicketFlowCSharp`,
+   `DashboardService.GetDashboardDataAsync` re-runs a fresh, live,
+   user-scoped query every time the Home component initializes — there is
+   no `[ResponseCache]`/`IMemoryCache` layer on this path, so navigating
+   back to the dashboard after any change never shows a stale snapshot —
+   see "Changes since last draft").
 6. A second user's tickets never appear in the counts or recent list.
+
+## Changes since last draft
+
+- **`TicketFlowCSharp` branch:** reworded AC-5 to describe Blazor's
+  per-navigation component re-initialization instead of Streamlit's
+  rerun-per-interaction model — same underlying guarantee ("never a stale
+  snapshot"), different mechanism. BRD-ID-preserving rewording, not a new
+  requirement (see BRD §11a).
+- **`TicketFlowCSharp` branch:** AC-4's Create Ticket, Ticket List,
+  Reports, and Chat Assistant quick actions are all implemented as of the
+  Chat Assistant stage — incremental migration is complete for this
+  feature.

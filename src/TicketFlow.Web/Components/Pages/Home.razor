@@ -1,0 +1,79 @@
+@page "/"
+@attribute [Authorize]
+
+<PageTitle>TicketFlow</PageTitle>
+
+<h1 class="brand-header">TicketFlow</h1>
+
+@if (_data is not null)
+{
+    <h2>Status Overview</h2>
+    <div class="stat-tiles">
+        @foreach (var status in TicketConstants.Statuses)
+        {
+            <div class="stat-tile">
+                <div class="stat-value">@_data.StatusCounts[status]</div>
+                <div class="stat-label">@status</div>
+            </div>
+        }
+    </div>
+
+    <h2>Quick Actions</h2>
+    <div class="quick-actions">
+        <a class="btn btn-primary" href="tickets/new">Create Ticket</a>
+        <a class="btn btn-primary" href="tickets">Ticket List</a>
+        <a class="btn btn-primary" href="reports">Reports</a>
+        <a class="btn btn-primary" href="chat">Chat Assistant</a>
+    </div>
+
+    <h2>Recent Tickets</h2>
+    @if (_data.RecentTickets.Count == 0)
+    {
+        <p><em>No tickets yet.</em></p>
+    }
+    else
+    {
+        <table class="table ticket-table">
+            <thead>
+                <tr>
+                    <th>Ticket</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ticket in _data.RecentTickets)
+                {
+                    <tr>
+                        <td><a href="@($"/tickets/detail/{ticket.TicketNumber}")">@ticket.TicketNumber</a></td>
+                        <td>@ticket.Title</td>
+                        <td>@ticket.Status</td>
+                        <td>@ticket.Priority</td>
+                        <td>@ticket.CreatedAt</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Inject]
+    private IDbConnectionFactory ConnectionFactory { get; set; } = default!;
+
+    [Inject]
+    private DashboardService DashboardService { get; set; } = default!;
+
+    [Inject]
+    private CurrentUserAccessor CurrentUser { get; set; } = default!;
+
+    private DashboardData? _data;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var connection = ConnectionFactory.CreateConnection();
+        _data = await DashboardService.GetDashboardDataAsync(connection, CurrentUser.CurrentUser!.Id);
+    }
+}

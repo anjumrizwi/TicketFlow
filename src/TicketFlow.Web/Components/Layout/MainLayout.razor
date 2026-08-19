@@ -1,0 +1,39 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <AuthorizeView>
+        <Authorized>
+            <div class="sidebar">
+                <div class="sidebar-brand">TicketFlow</div>
+                <NavMenu />
+                <button class="btn btn-logout" @onclick="Logout">Log out</button>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+
+    <main>
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    [Inject]
+    private CurrentUserAccessor CurrentUser { get; set; } = default!;
+
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
+
+    private void Logout()
+    {
+        CurrentUser.Logout();
+        Navigation.NavigateTo("/login");
+    }
+}
