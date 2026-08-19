@@ -9,3 +9,4 @@ src/**/bin/
 src/**/obj/
 src/**/*.user
 
+/src/.vs
